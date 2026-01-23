@@ -1,8 +1,26 @@
+use std::env;
 use std::fs;
 use std::io::{self, Write};
 use std::os::unix::fs::PermissionsExt;
+use std::path::PathBuf;
 
 const BUILTINS: [&str; 3] = ["exit", "echo", "type"];
+
+fn find_executable(command_name: &str) -> Option<PathBuf> {
+    let path_var = env::var("PATH").unwrap_or_default();
+
+    for dir in path_var.split(':') {
+        let mut full_path = PathBuf::from(dir);
+        full_path.push(command_name);
+
+        if let Ok(metadata) = fs::metadata(&full_path) {
+            if metadata.is_file() && (metadata.permissions().mode() & 0o111 != 0) {
+                return Some(full_path);
+            }
+        }
+    }
+    None
+}
 
 fn main() {
     loop {
@@ -27,24 +45,9 @@ fn main() {
                 if BUILTINS.contains(&args) {
                     println!("{} is a shell builtin", args);
                 } else {
-                    let path_var = std::env::var("PATH").unwrap_or_default();
-                    let mut found = false;
-
-                    for dir in path_var.split(':') {
-                        let mut full_path = std::path::PathBuf::from(dir);
-                        full_path.push(args);
-
-                        if let Ok(metadata) = fs::metadata(&full_path) {
-                            if metadata.is_file() && (metadata.permissions().mode() & 0o111 != 0) {
-                                println!("{} is {}", args, full_path.display());
-                                found = true;
-                                break;
-                            }
-                        }
-                    }
-
-                    if !found {
-                        println!("{}: not found", args);
+                    match find_executable(args) {
+                        Some(path) => println!("{} is {}", args, path.display()),
+                        None => println!("{}: not found", args),
                     }
                 }
             }
