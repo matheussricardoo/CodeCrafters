@@ -2,7 +2,9 @@ use std::env;
 use std::fs;
 use std::io::{self, Write};
 use std::os::unix::fs::PermissionsExt;
+use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
+use std::process::Command;
 
 const BUILTINS: [&str; 3] = ["exit", "echo", "type"];
 
@@ -51,7 +53,21 @@ fn main() {
                     }
                 }
             }
-            _ => println!("{}: command not found", clean_input),
+            _ => match find_executable(command) {
+                Some(path) => {
+                    let res = Command::new(path)
+                        .arg0(command)
+                        .args(args.split_whitespace())
+                        .status();
+
+                    if let Err(e) = res {
+                        println!("Error while executing: {}", e);
+                    }
+                }
+                None => {
+                    println!("{}: command not found", clean_input);
+                }
+            },
         }
     }
 }
