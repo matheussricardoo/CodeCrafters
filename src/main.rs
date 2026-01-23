@@ -1,5 +1,8 @@
-#[allow(unused_imports)]
+use std::fs;
 use std::io::{self, Write};
+use std::os::unix::fs::PermissionsExt;
+
+const BUILTINS: [&str; 3] = ["exit", "echo", "type"];
 
 fn main() {
     loop {
@@ -21,14 +24,28 @@ fn main() {
                 println!("{}", args)
             }
             "type" => {
-                if args == "echo" {
-                    println!("echo is a shell builtin");
-                } else if args == "exit" {
-                    println!("exit is a shell builtin");
-                } else if args == "type" {
-                    println!("type is a shell builtin");
+                if BUILTINS.contains(&args) {
+                    println!("{} is a shell builtin", args);
                 } else {
-                    println!("{}: not found", args);
+                    let path_var = std::env::var("PATH").unwrap_or_default();
+                    let mut found = false;
+
+                    for dir in path_var.split(':') {
+                        let mut full_path = std::path::PathBuf::from(dir);
+                        full_path.push(args);
+
+                        if let Ok(metadata) = fs::metadata(&full_path) {
+                            if metadata.is_file() && (metadata.permissions().mode() & 0o111 != 0) {
+                                println!("{} is {}", args, full_path.display());
+                                found = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    if !found {
+                        println!("{}: not found", args);
+                    }
                 }
             }
             _ => println!("{}: command not found", clean_input),
