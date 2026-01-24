@@ -1,4 +1,5 @@
 use std::env;
+use std::path::Path;
 use std::fs;
 use std::io::{self, Write};
 use std::os::unix::fs::PermissionsExt;
@@ -6,7 +7,7 @@ use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::Command;
 
-const BUILTINS: [&str; 4] = ["exit", "echo", "type", "pwd"];
+const BUILTINS: [&str; 5] = ["exit", "echo", "type", "pwd", "cd"];
 
 fn find_executable(command_name: &str) -> Option<PathBuf> {
     let path_var = env::var("PATH").unwrap_or_default();
@@ -29,7 +30,7 @@ fn main() {
         print!("$ ");
         io::stdout().flush().unwrap();
         let mut buffer = String::new();
-        let bytes_read = io::stdin().read_line(&mut buffer).unwrap();
+        let _bytes_read = io::stdin().read_line(&mut buffer).unwrap();
         let clean_input = buffer.trim();
 
         let (command, args) = match clean_input.split_once(' ') {
@@ -53,14 +54,29 @@ fn main() {
                     }
                 }
             }
-            "pwd" => {
-                match env::current_dir() {
-                    Ok(path) => {
-                        println!("{}", path.display());
+            "pwd" => match env::current_dir() {
+                Ok(path) => {
+                    println!("{}", path.display());
+                }
+                Err(e) => {
+                    eprintln!("Error retrieving directory: {}", e)
+                }
+            },
+            "cd" => {
+                let new_dir = if args == "~" {
+                    match env::var("Home") {
+                        Ok(path) => path,
+                        Err(_) => {
+                            println!("cd: HOME not set");
+                            continue;
+                        }
                     }
-                    Err(e) => {
-                        eprintln!("Error retrieving directory: {}",e)
-                    }
+                } else {
+                    args.to_string()
+                };
+                let path = Path::new(&new_dir);
+                if let Err(_) = env::set_current_dir(path) {
+                    println!("cd: {}: No such file or directory", new_dir);
                 }
             }
             _ => match find_executable(command) {
