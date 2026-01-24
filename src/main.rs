@@ -6,7 +6,7 @@ use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::Command;
 
-const BUILTINS: [&str; 3] = ["exit", "echo", "type"];
+const BUILTINS: [&str; 4] = ["exit", "echo", "type", "pwd"];
 
 fn find_executable(command_name: &str) -> Option<PathBuf> {
     let path_var = env::var("PATH").unwrap_or_default();
@@ -53,6 +53,16 @@ fn main() {
                     }
                 }
             }
+            "pwd" => {
+                match env::current_dir() {
+                    Ok(path) => {
+                        println!("{}", path.display());
+                    }
+                    Err(e) => {
+                        eprintln!("Error retrieving directory: {}",e)
+                    }
+                }
+            }
             _ => match find_executable(command) {
                 Some(path) => {
                     let res = Command::new(path)
@@ -61,7 +71,7 @@ fn main() {
                         .status();
 
                     if let Err(e) = res {
-                        println!("Error while executing: {}", e);
+                        eprintln!("Error while executing: {}", e);
                     }
                 }
                 None => {
