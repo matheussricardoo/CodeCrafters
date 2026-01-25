@@ -51,7 +51,13 @@ fn parse_input(input: &str) -> Vec<String> {
                 current_arg.push(c);
             }
         } else {
-            if c == '\'' {
+            if escaped {
+                current_arg.push(c);
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            }
+            else if c == '\'' {
                 in_single_quote = true;
             } else if c == '"' {
                 in_double_quote = true;
