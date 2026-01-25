@@ -1,9 +1,9 @@
 use std::env;
-use std::path::Path;
 use std::fs;
 use std::io::{self, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::process::CommandExt;
+use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -64,7 +64,7 @@ fn main() {
             },
             "cd" => {
                 let new_dir = if args == "~" {
-                    match env::var("Home") {
+                    match env::var("HOME") {
                         Ok(path) => path,
                         Err(_) => {
                             println!("cd: HOME not set");
