@@ -25,6 +25,39 @@ fn find_executable(command_name: &str) -> Option<PathBuf> {
     None
 }
 
+fn parse_input(input: &str) -> Vec<String> {
+    let mut args = Vec::new();
+    let mut current_arg = String::new();
+    let mut in_single_quote = false;
+
+    for c in input.chars() {
+        if in_single_quote {
+            if c == '\'' {
+                in_single_quote = false;
+            } else {
+                current_arg.push(c);
+            }
+        } else {
+            if c == '\'' {
+                in_single_quote = true;
+            } else if c.is_whitespace() {
+                if !current_arg.is_empty() {
+                    args.push(current_arg);
+                    current_arg = String::new();
+                }
+            } else {
+                current_arg.push(c);
+            }
+        }
+    }
+
+    if !current_arg.is_empty() {
+        args.push(current_arg);
+    }
+
+    args
+}
+
 fn main() {
     loop {
         print!("$ ");
@@ -33,24 +66,29 @@ fn main() {
         let _bytes_read = io::stdin().read_line(&mut buffer).unwrap();
         let clean_input = buffer.trim();
 
-        let (command, args) = match clean_input.split_once(' ') {
-            Some((cmd, rest)) => (cmd, rest),
-            None => (clean_input, ""),
-        };
+        let parsed_args = parse_input(clean_input);
 
-        match command {
+        if parsed_args.is_empty() {
+            continue;
+        }
+
+        let command = &parsed_args[0];
+        let args = &parsed_args[1..];
+
+        match command.as_str() {
             "exit" => break,
-            "" => continue,
             "echo" => {
-                println!("{}", args)
+                println!("{}", args.join(" "))
             }
             "type" => {
-                if BUILTINS.contains(&args) {
-                    println!("{} is a shell builtin", args);
-                } else {
-                    match find_executable(args) {
-                        Some(path) => println!("{} is {}", args, path.display()),
-                        None => println!("{}: not found", args),
+                if let Some(arg) = args.get(0) {
+                    if BUILTINS.contains(&arg.as_str()) {
+                        println!("{} is a shell builtin", arg);
+                    } else {
+                        match find_executable(arg) {
+                            Some(path) => println!("{} is {}", arg, path.display()),
+                            None => println!("{}: not found", arg),
+                        }
                     }
                 }
             }
@@ -63,7 +101,8 @@ fn main() {
                 }
             },
             "cd" => {
-                let new_dir = if args == "~" {
+                let arg = args.get(0).map(|s| s.as_str()).unwrap_or("~");
+                let new_dir = if arg == "~" {
                     match env::var("HOME") {
                         Ok(path) => path,
                         Err(_) => {
@@ -72,7 +111,7 @@ fn main() {
                         }
                     }
                 } else {
-                    args.to_string()
+                    arg.to_string()
                 };
                 let path = Path::new(&new_dir);
                 if let Err(_) = env::set_current_dir(path) {
@@ -81,17 +120,14 @@ fn main() {
             }
             _ => match find_executable(command) {
                 Some(path) => {
-                    let res = Command::new(path)
-                        .arg0(command)
-                        .args(args.split_whitespace())
-                        .status();
+                    let res = Command::new(path).arg0(command).args(args).status();
 
                     if let Err(e) = res {
                         eprintln!("Error while executing: {}", e);
                     }
                 }
                 None => {
-                    println!("{}: command not found", clean_input);
+                    println!("{}: command not found", command);
                 }
             },
         }
