@@ -6,6 +6,7 @@ use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
+use std::thread::current;
 
 const BUILTINS: [&str; 5] = ["exit", "echo", "type", "pwd", "cd"];
 
@@ -41,7 +42,12 @@ fn parse_input(input: &str) -> Vec<String> {
             }
         } else if in_double_quote {
             if escaped {
-                current_arg.push(c);
+                if c == '"' || c == '\\' {
+                    current_arg.push(c);
+                } else {
+                    current_arg.push('\\');
+                    current_arg.push(c);
+                }
                 escaped = false
             } else if c == '\\' {
                 escaped = true;
@@ -56,8 +62,7 @@ fn parse_input(input: &str) -> Vec<String> {
                 escaped = false;
             } else if c == '\\' {
                 escaped = true;
-            }
-            else if c == '\'' {
+            } else if c == '\'' {
                 in_single_quote = true;
             } else if c == '"' {
                 in_double_quote = true;
