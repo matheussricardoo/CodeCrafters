@@ -6,7 +6,6 @@ use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
-use std::thread::current;
 
 const BUILTINS: [&str; 5] = ["exit", "echo", "type", "pwd", "cd"];
 
