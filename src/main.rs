@@ -126,7 +126,8 @@ fn main() {
                     }
                 }
             }
-        } else if let Some(index) = parsed_args.iter().position(|arg| arg == ">" || arg == "1>") {
+        } else if let Some(index) = parsed_args.iter().position(|arg| arg == ">" || arg == "1>")
+        {
             if index + 1 < parsed_args.len() {
                 let filename = &parsed_args[index + 1];
 
@@ -143,7 +144,31 @@ fn main() {
             }
         }
 
-        if let Some(index) = parsed_args.iter().position(|arg| arg == "2>") {
+        if let Some(index) = parsed_args.iter().position(|arg| arg == "2>>") {
+            if index + 1 < parsed_args.len() {
+                let filename = &parsed_args[index + 1];
+
+                if let Some(parent) = Path::new(filename).parent() {
+                    let _ = fs::create_dir_all(parent);
+                }
+
+                match OpenOptions::new()
+                    .create(true)
+                    .write(true)
+                    .append(true)
+                    .open(filename)
+                {
+                    Ok(file) => {
+                        error_file = Some(file);
+                        parsed_args.drain(index..=index + 1);
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to open file for appending stderr: {}", e);
+                        continue;
+                    }
+                }
+            }
+        } else if let Some(index) = parsed_args.iter().position(|arg| arg == "2>") {
             if index + 1 < parsed_args.len() {
                 let filename = &parsed_args[index + 1];
                 match File::create(filename) {
