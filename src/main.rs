@@ -1,6 +1,7 @@
 use std::env;
 use std::fs;
 use std::fs::File;
+use std::fs::OpenOptions;
 use std::io::{self, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::process::CommandExt;
@@ -98,7 +99,34 @@ fn main() {
         let mut output_file: Option<File> = None;
         let mut error_file: Option<File> = None;
 
-        if let Some(index) = parsed_args.iter().position(|arg| arg == ">" || arg == "1>") {
+        if let Some(index) = parsed_args
+            .iter()
+            .position(|arg| arg == ">>" || arg == "1>>")
+        {
+            if index + 1 < parsed_args.len() {
+                let filename = &parsed_args[index + 1];
+
+                if let Some(parent) = Path::new(filename).parent() {
+                    let _ = fs::create_dir_all(parent);
+                }
+
+                match OpenOptions::new()
+                    .create(true)
+                    .write(true)
+                    .append(true)
+                    .open(filename)
+                {
+                    Ok(file) => {
+                        output_file = Some(file);
+                        parsed_args.drain(index..=index + 1);
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to open file for appending: {}", e);
+                        continue;
+                    }
+                }
+            }
+        } else if let Some(index) = parsed_args.iter().position(|arg| arg == ">" || arg == "1>") {
             if index + 1 < parsed_args.len() {
                 let filename = &parsed_args[index + 1];
 
