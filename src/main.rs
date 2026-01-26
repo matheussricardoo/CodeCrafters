@@ -1,11 +1,13 @@
 use std::env;
 use std::fs;
+use std::fs::File;
 use std::io::{self, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
+use std::process::Stdio;
 
 const BUILTINS: [&str; 5] = ["exit", "echo", "type", "pwd", "cd"];
 
@@ -91,7 +93,26 @@ fn main() {
         let _bytes_read = io::stdin().read_line(&mut buffer).unwrap();
         let clean_input = buffer.trim();
 
-        let parsed_args = parse_input(clean_input);
+        let mut parsed_args = parse_input(clean_input);
+
+        let mut output_file: Option<File> = None;
+
+        if let Some(index) = parsed_args.iter().position(|arg| arg == ">" || arg == "1>") {
+            if index + 1 < parsed_args.len() {
+                let filename = &parsed_args[index + 1];
+
+                match File::create(filename) {
+                    Ok(file) => {
+                        output_file = Some(file);
+                        parsed_args.drain(index..=index + 1);
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to create file: {}", e);
+                        continue;
+                    }
+                }
+            }
+        }
 
         if parsed_args.is_empty() {
             continue;
@@ -103,7 +124,15 @@ fn main() {
         match command.as_str() {
             "exit" => break,
             "echo" => {
-                println!("{}", args.join(" "))
+                let output = args.join(" ");
+                match output_file {
+                    Some(mut file) => {
+                        if let Err(e) = writeln!(file, "{}", output) {
+                            eprintln!("Error writing to file: {}", e);
+                        }
+                    }
+                    None => println!("{}", output),
+                }
             }
             "type" => {
                 if let Some(arg) = args.get(0) {
@@ -145,7 +174,19 @@ fn main() {
             }
             _ => match find_executable(command) {
                 Some(path) => {
-                    let res = Command::new(path).arg0(command).args(args).status();
+                    let command_name = Path::new(command).file_name().unwrap().to_str().unwrap();
+
+                    let stdout_dest = match output_file {
+                        Some(file) => Stdio::from(file),
+                        None => Stdio::inherit(),
+                    };
+
+                    let res = Command::new(&path)
+                        .arg0(command_name)
+                        .args(args)
+                        .stdout(stdout_dest)
+                        .stderr(Stdio::inherit())
+                        .status();
 
                     if let Err(e) = res {
                         eprintln!("Error while executing: {}", e);
