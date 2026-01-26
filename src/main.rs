@@ -96,6 +96,7 @@ fn main() {
         let mut parsed_args = parse_input(clean_input);
 
         let mut output_file: Option<File> = None;
+        let mut error_file: Option<File> = None;
 
         if let Some(index) = parsed_args.iter().position(|arg| arg == ">" || arg == "1>") {
             if index + 1 < parsed_args.len() {
@@ -108,6 +109,22 @@ fn main() {
                     }
                     Err(e) => {
                         eprintln!("Failed to create file: {}", e);
+                        continue;
+                    }
+                }
+            }
+        }
+
+        if let Some(index) = parsed_args.iter().position(|arg| arg == "2>") {
+            if index + 1 < parsed_args.len() {
+                let filename = &parsed_args[index + 1];
+                match File::create(filename) {
+                    Ok(file) => {
+                        error_file = Some(file);
+                        parsed_args.drain(index..=index + 1);
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to create error file: {}", e);
                         continue;
                     }
                 }
@@ -181,11 +198,16 @@ fn main() {
                         None => Stdio::inherit(),
                     };
 
+                    let stderr_dest = match error_file {
+                        Some(file) => Stdio::from(file),
+                        None => Stdio::inherit(),
+                    };
+
                     let res = Command::new(&path)
                         .arg0(command_name)
                         .args(args)
                         .stdout(stdout_dest)
-                        .stderr(Stdio::inherit())
+                        .stderr(stderr_dest)
                         .status();
 
                     if let Err(e) = res {
