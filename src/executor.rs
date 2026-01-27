@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::env;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
@@ -213,4 +214,39 @@ pub fn execute_command_line(input: &str) -> bool {
         },
     }
     false
+}
+
+pub fn find_completions(prefix: &str) -> Vec<String> {
+    let mut candidates = HashSet::new();
+
+    for &builtin in BUILTINS.iter() {
+        if builtin.starts_with(prefix) {
+            candidates.insert(builtin.to_string());
+        }
+    }
+
+    if let Ok(path_var) = env::var("PATH") {
+        for dir in path_var.split(':') {
+            if let Ok(entries) = fs::read_dir(dir) {
+                for entry in entries {
+                    if let Ok(entry) = entry {
+                        let filename = entry.file_name().to_string_lossy().to_string();
+
+                        if filename.starts_with(prefix) {
+                            if let Ok(metadata) = entry.metadata() {
+                                if metadata.is_file()
+                                    && (metadata.permissions().mode() & 0o111 != 0)
+                                {
+                                    candidates.insert(filename);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let mut results: Vec<String> = candidates.into_iter().collect();
+    results.sort();
+    results
 }
