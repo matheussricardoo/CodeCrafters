@@ -3,11 +3,9 @@ mod executor;
 mod parser;
 mod terminal;
 
-use std::io::{self, Read, Write};
-
-use crate::builtins::BUILTINS;
-use crate::executor::execute_command_line;
+use crate::executor::{execute_command_line, find_completions};
 use crate::terminal::enable_raw_mode;
+use std::io::{self, Read, Write};
 
 fn main() {
     enable_raw_mode();
@@ -28,23 +26,26 @@ fn main() {
 
         match byte {
             9 => {
-                let matches: Vec<&&str> = BUILTINS
-                    .iter()
-                    .filter(|cmd| cmd.starts_with(&buffer))
-                    .collect();
+                let matches = find_completions(&buffer);
 
                 if matches.len() == 1 {
-                    let completed = matches[0];
-                    let remainder = &completed[buffer.len()..];
-                    print!("{} ", remainder);
+                    let completed = &matches[0];
+                    if completed.len() >= buffer.len() {
+                        let remainder = &completed[buffer.len()..];
+                        print!("{} ", remainder);
+                        io::stdout().flush().unwrap();
+                        buffer.push_str(remainder);
+                        buffer.push(' ');
+                    }
+                } else if matches.len() > 1 {
+                    print!("\x07");
                     io::stdout().flush().unwrap();
-                    buffer.push_str(remainder);
-                    buffer.push(' ');
                 } else {
                     print!("\x07");
                     io::stdout().flush().unwrap();
                 }
             }
+
             10 => {
                 println!();
                 if execute_command_line(&buffer) {
