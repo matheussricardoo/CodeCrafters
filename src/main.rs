@@ -1,276 +1,72 @@
-use std::env;
-use std::fs;
-use std::fs::File;
-use std::fs::OpenOptions;
-use std::io::{self, Write};
-use std::os::unix::fs::PermissionsExt;
-use std::os::unix::process::CommandExt;
-use std::path::Path;
-use std::path::PathBuf;
-use std::process::Command;
-use std::process::Stdio;
+mod builtins;
+mod executor;
+mod parser;
+mod terminal;
 
-const BUILTINS: [&str; 5] = ["exit", "echo", "type", "pwd", "cd"];
+use std::io::{self, Read, Write};
 
-fn find_executable(command_name: &str) -> Option<PathBuf> {
-    let path_var = env::var("PATH").unwrap_or_default();
-
-    for dir in path_var.split(':') {
-        let mut full_path = PathBuf::from(dir);
-        full_path.push(command_name);
-
-        if let Ok(metadata) = fs::metadata(&full_path) {
-            if metadata.is_file() && (metadata.permissions().mode() & 0o111 != 0) {
-                return Some(full_path);
-            }
-        }
-    }
-    None
-}
-
-fn parse_input(input: &str) -> Vec<String> {
-    let mut args = Vec::new();
-    let mut current_arg = String::new();
-    let mut in_single_quote = false;
-    let mut in_double_quote = false;
-    let mut escaped = false;
-
-    for c in input.chars() {
-        if in_single_quote {
-            if c == '\'' {
-                in_single_quote = false;
-            } else {
-                current_arg.push(c);
-            }
-        } else if in_double_quote {
-            if escaped {
-                if c == '"' || c == '\\' {
-                    current_arg.push(c);
-                } else {
-                    current_arg.push('\\');
-                    current_arg.push(c);
-                }
-                escaped = false
-            } else if c == '\\' {
-                escaped = true;
-            } else if c == '"' {
-                in_double_quote = false
-            } else {
-                current_arg.push(c);
-            }
-        } else {
-            if escaped {
-                current_arg.push(c);
-                escaped = false;
-            } else if c == '\\' {
-                escaped = true;
-            } else if c == '\'' {
-                in_single_quote = true;
-            } else if c == '"' {
-                in_double_quote = true;
-            } else if c.is_whitespace() {
-                if !current_arg.is_empty() {
-                    args.push(current_arg);
-                    current_arg = String::new();
-                }
-            } else {
-                current_arg.push(c);
-            }
-        }
-    }
-
-    if !current_arg.is_empty() {
-        args.push(current_arg);
-    }
-
-    args
-}
+use crate::builtins::BUILTINS;
+use crate::executor::execute_command_line;
+use crate::terminal::enable_raw_mode;
 
 fn main() {
+    enable_raw_mode();
+
+    print!("$ ");
+    io::stdout().flush().unwrap();
+
+    let mut buffer = String::new();
+    let stdin = io::stdin();
+    let mut handle = stdin.lock();
+
     loop {
-        print!("$ ");
-        io::stdout().flush().unwrap();
-        let mut buffer = String::new();
-        let _bytes_read = io::stdin().read_line(&mut buffer).unwrap();
-        let clean_input = buffer.trim();
-
-        let mut parsed_args = parse_input(clean_input);
-
-        let mut output_file: Option<File> = None;
-        let mut error_file: Option<File> = None;
-
-        if let Some(index) = parsed_args
-            .iter()
-            .position(|arg| arg == ">>" || arg == "1>>")
-        {
-            if index + 1 < parsed_args.len() {
-                let filename = &parsed_args[index + 1];
-
-                if let Some(parent) = Path::new(filename).parent() {
-                    let _ = fs::create_dir_all(parent);
-                }
-
-                match OpenOptions::new()
-                    .create(true)
-                    .write(true)
-                    .append(true)
-                    .open(filename)
-                {
-                    Ok(file) => {
-                        output_file = Some(file);
-                        parsed_args.drain(index..=index + 1);
-                    }
-                    Err(e) => {
-                        eprintln!("Failed to open file for appending: {}", e);
-                        continue;
-                    }
-                }
-            }
-        } else if let Some(index) = parsed_args.iter().position(|arg| arg == ">" || arg == "1>")
-        {
-            if index + 1 < parsed_args.len() {
-                let filename = &parsed_args[index + 1];
-
-                match File::create(filename) {
-                    Ok(file) => {
-                        output_file = Some(file);
-                        parsed_args.drain(index..=index + 1);
-                    }
-                    Err(e) => {
-                        eprintln!("Failed to create file: {}", e);
-                        continue;
-                    }
-                }
-            }
+        let mut byte_buffer = [0u8; 1];
+        if handle.read_exact(&mut byte_buffer).is_err() {
+            break;
         }
+        let byte = byte_buffer[0];
 
-        if let Some(index) = parsed_args.iter().position(|arg| arg == "2>>") {
-            if index + 1 < parsed_args.len() {
-                let filename = &parsed_args[index + 1];
+        match byte {
+            9 => {
+                let matches: Vec<&&str> = BUILTINS
+                    .iter()
+                    .filter(|cmd| cmd.starts_with(&buffer))
+                    .collect();
 
-                if let Some(parent) = Path::new(filename).parent() {
-                    let _ = fs::create_dir_all(parent);
-                }
-
-                match OpenOptions::new()
-                    .create(true)
-                    .write(true)
-                    .append(true)
-                    .open(filename)
-                {
-                    Ok(file) => {
-                        error_file = Some(file);
-                        parsed_args.drain(index..=index + 1);
-                    }
-                    Err(e) => {
-                        eprintln!("Failed to open file for appending stderr: {}", e);
-                        continue;
-                    }
-                }
-            }
-        } else if let Some(index) = parsed_args.iter().position(|arg| arg == "2>") {
-            if index + 1 < parsed_args.len() {
-                let filename = &parsed_args[index + 1];
-                match File::create(filename) {
-                    Ok(file) => {
-                        error_file = Some(file);
-                        parsed_args.drain(index..=index + 1);
-                    }
-                    Err(e) => {
-                        eprintln!("Failed to create error file: {}", e);
-                        continue;
-                    }
-                }
-            }
-        }
-
-        if parsed_args.is_empty() {
-            continue;
-        }
-
-        let command = &parsed_args[0];
-        let args = &parsed_args[1..];
-
-        match command.as_str() {
-            "exit" => break,
-            "echo" => {
-                let output = args.join(" ");
-                match output_file {
-                    Some(mut file) => {
-                        if let Err(e) = writeln!(file, "{}", output) {
-                            eprintln!("Error writing to file: {}", e);
-                        }
-                    }
-                    None => println!("{}", output),
-                }
-            }
-            "type" => {
-                if let Some(arg) = args.get(0) {
-                    if BUILTINS.contains(&arg.as_str()) {
-                        println!("{} is a shell builtin", arg);
-                    } else {
-                        match find_executable(arg) {
-                            Some(path) => println!("{} is {}", arg, path.display()),
-                            None => println!("{}: not found", arg),
-                        }
-                    }
-                }
-            }
-            "pwd" => match env::current_dir() {
-                Ok(path) => {
-                    println!("{}", path.display());
-                }
-                Err(e) => {
-                    eprintln!("Error retrieving directory: {}", e)
-                }
-            },
-            "cd" => {
-                let arg = args.get(0).map(|s| s.as_str()).unwrap_or("~");
-                let new_dir = if arg == "~" {
-                    match env::var("HOME") {
-                        Ok(path) => path,
-                        Err(_) => {
-                            println!("cd: HOME not set");
-                            continue;
-                        }
-                    }
+                if matches.len() == 1 {
+                    let completed = matches[0];
+                    let remainder = &completed[buffer.len()..];
+                    print!("{} ", remainder);
+                    io::stdout().flush().unwrap();
+                    buffer.push_str(remainder);
+                    buffer.push(' ');
                 } else {
-                    arg.to_string()
-                };
-                let path = Path::new(&new_dir);
-                if let Err(_) = env::set_current_dir(path) {
-                    println!("cd: {}: No such file or directory", new_dir);
+                    print!("\x07");
+                    io::stdout().flush().unwrap();
                 }
             }
-            _ => match find_executable(command) {
-                Some(path) => {
-                    let command_name = Path::new(command).file_name().unwrap().to_str().unwrap();
-
-                    let stdout_dest = match output_file {
-                        Some(file) => Stdio::from(file),
-                        None => Stdio::inherit(),
-                    };
-
-                    let stderr_dest = match error_file {
-                        Some(file) => Stdio::from(file),
-                        None => Stdio::inherit(),
-                    };
-
-                    let res = Command::new(&path)
-                        .arg0(command_name)
-                        .args(args)
-                        .stdout(stdout_dest)
-                        .stderr(stderr_dest)
-                        .status();
-
-                    if let Err(e) = res {
-                        eprintln!("Error while executing: {}", e);
-                    }
+            10 => {
+                println!();
+                if execute_command_line(&buffer) {
+                    break;
                 }
-                None => {
-                    println!("{}: command not found", command);
+                buffer.clear();
+                print!("$ ");
+                io::stdout().flush().unwrap();
+            }
+            127 => {
+                if !buffer.is_empty() {
+                    buffer.pop();
+                    print!("\x08 \x08");
+                    io::stdout().flush().unwrap();
                 }
-            },
+            }
+            c => {
+                let char = c as char;
+                print!("{}", char);
+                io::stdout().flush().unwrap();
+                buffer.push(char);
+            }
         }
     }
 }
