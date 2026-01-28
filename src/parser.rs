@@ -38,6 +38,12 @@ pub fn parse_input(input: &str) -> Vec<String> {
                 in_single_quote = true;
             } else if c == '"' {
                 in_double_quote = true;
+            } else if c == '|' {
+                if !current_arg.is_empty() {
+                    args.push(current_arg);
+                    current_arg = String::new();
+                }
+                args.push("|".to_string());
             } else if c.is_whitespace() {
                 if !current_arg.is_empty() {
                     args.push(current_arg);
@@ -54,4 +60,26 @@ pub fn parse_input(input: &str) -> Vec<String> {
     }
 
     args
+}
+
+pub fn split_by_pipe(args: Vec<String>) -> Vec<Vec<String>> {
+    let mut commands = Vec::new();
+    let mut current_cmd = Vec::new();
+
+    for arg in args {
+        if arg == "|" {
+            if !current_cmd.is_empty() {
+                commands.push(current_cmd);
+                current_cmd = Vec::new();
+            }
+        } else {
+            current_cmd.push(arg);
+        }
+    }
+
+    if !current_cmd.is_empty() {
+        commands.push(current_cmd);
+    }
+
+    commands
 }

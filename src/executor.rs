@@ -3,12 +3,13 @@ use std::env;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::os::unix::fs::PermissionsExt;
+use std::os::unix::io::{AsRawFd, FromRawFd};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use crate::builtins::BUILTINS;
-use crate::parser::parse_input;
+use crate::parser::{parse_input, split_by_pipe};
 use crate::terminal::{disable_raw_mode, enable_raw_mode};
 
 fn find_executable(command_name: &str) -> Option<PathBuf> {
@@ -33,7 +34,15 @@ pub fn execute_command_line(input: &str) -> bool {
         return false;
     }
 
-    let mut parsed_args = parse_input(clean_input);
+    let parsed_args = parse_input(clean_input);
+    let commands = split_by_pipe(parsed_args);
+
+    if commands.len() > 1 {
+        execute_pipeline(commands);
+        return false;
+    }
+
+    let mut parsed_args = commands.into_iter().next().unwrap_or_default();
     let mut output_file: Option<File> = None;
     let mut error_file: Option<File> = None;
 
@@ -214,6 +223,124 @@ pub fn execute_command_line(input: &str) -> bool {
         },
     }
     false
+}
+
+fn execute_pipeline(commands: Vec<Vec<String>>) {
+    if commands.len() != 2 {
+        eprintln!("Only two-command pipelines are supported");
+        return;
+    }
+
+    let cmd1_args = &commands[0];
+    let cmd2_args = &commands[1];
+
+    if cmd1_args.is_empty() || cmd2_args.is_empty() {
+        eprintln!("Empty command in pipeline");
+        return;
+    }
+
+    let cmd1_name = &cmd1_args[0];
+    let cmd1_rest = &cmd1_args[1..];
+    let cmd2_name = &cmd2_args[0];
+    let cmd2_rest = &cmd2_args[1..];
+
+    let cmd1_path = match find_executable(cmd1_name) {
+        Some(path) => path,
+        None => {
+            println!("{}: command not found", cmd1_name);
+            return;
+        }
+    };
+
+    let cmd2_path = match find_executable(cmd2_name) {
+        Some(path) => path,
+        None => {
+            println!("{}: command not found", cmd2_name);
+            return;
+        }
+    };
+
+    let mut pipe_fds: [libc::c_int; 2] = [0; 2];
+    unsafe {
+        if libc::pipe(pipe_fds.as_mut_ptr()) == -1 {
+            eprintln!("Failed to create pipe");
+            return;
+        }
+    }
+
+    let pipe_read_fd = pipe_fds[0];
+    let pipe_write_fd = pipe_fds[1];
+
+    disable_raw_mode();
+
+    let pid1 = unsafe { libc::fork() };
+
+    if pid1 == -1 {
+        eprintln!("Failed to fork for first command");
+        unsafe {
+            libc::close(pipe_read_fd);
+            libc::close(pipe_write_fd);
+        }
+        enable_raw_mode();
+        return;
+    }
+
+    if pid1 == 0 {
+        unsafe {
+            libc::close(pipe_read_fd);
+            libc::dup2(pipe_write_fd, libc::STDOUT_FILENO);
+            libc::close(pipe_write_fd);
+        }
+
+        let cmd1_file_name = Path::new(cmd1_name).file_name().unwrap().to_str().unwrap();
+
+        let _ = Command::new(&cmd1_path)
+            .arg0(cmd1_file_name)
+            .args(cmd1_rest)
+            .exec();
+
+        std::process::exit(1);
+    }
+
+    let pid2 = unsafe { libc::fork() };
+
+    if pid2 == -1 {
+        eprintln!("Failed to fork for second command");
+        unsafe {
+            libc::close(pipe_read_fd);
+            libc::close(pipe_write_fd);
+        }
+        enable_raw_mode();
+        return;
+    }
+
+    if pid2 == 0 {
+        unsafe {
+            libc::close(pipe_write_fd);
+            libc::dup2(pipe_read_fd, libc::STDIN_FILENO);
+            libc::close(pipe_read_fd);
+        }
+
+        let cmd2_file_name = Path::new(cmd2_name).file_name().unwrap().to_str().unwrap();
+
+        let _ = Command::new(&cmd2_path)
+            .arg0(cmd2_file_name)
+            .args(cmd2_rest)
+            .exec();
+
+        std::process::exit(1);
+    }
+
+    unsafe {
+        libc::close(pipe_read_fd);
+        libc::close(pipe_write_fd);
+
+        let mut status: libc::c_int = 0;
+        libc::waitpid(pid1, &mut status, 0);
+        libc::waitpid(pid2, &mut status, 0);
+    }
+
+    enable_raw_mode();
 }
 
 pub fn find_completions(prefix: &str) -> Vec<String> {
