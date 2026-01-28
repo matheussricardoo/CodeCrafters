@@ -225,6 +225,37 @@ pub fn execute_command_line(input: &str) -> bool {
     false
 }
 
+fn is_builtin(cmd: &str) -> bool {
+    BUILTINS.contains(&cmd)
+}
+
+fn execute_builtin_in_pipeline(cmd_name: &str, args: &[String]) {
+    match cmd_name {
+        "echo" => {
+            let output = args.join(" ");
+            println!("{}", output);
+        }
+        "type" => {
+            if let Some(arg) = args.get(0) {
+                if BUILTINS.contains(&arg.as_str()) {
+                    println!("{} is a shell builtin", arg);
+                } else {
+                    match find_executable(arg) {
+                        Some(path) => println!("{} is {}", arg, path.display()),
+                        None => println!("{}: not found", arg),
+                    }
+                }
+            }
+        }
+        "pwd" => {
+            if let Ok(path) = std::env::current_dir() {
+                println!("{}", path.display());
+            }
+        }
+        _ => {}
+    }
+}
+
 fn execute_pipeline(commands: Vec<Vec<String>>) {
     if commands.len() != 2 {
         eprintln!("Only two-command pipelines are supported");
@@ -244,20 +275,31 @@ fn execute_pipeline(commands: Vec<Vec<String>>) {
     let cmd2_name = &cmd2_args[0];
     let cmd2_rest = &cmd2_args[1..];
 
-    let cmd1_path = match find_executable(cmd1_name) {
-        Some(path) => path,
-        None => {
-            println!("{}: command not found", cmd1_name);
-            return;
+    let cmd1_is_builtin = is_builtin(cmd1_name);
+    let cmd2_is_builtin = is_builtin(cmd2_name);
+
+    let cmd1_path = if !cmd1_is_builtin {
+        match find_executable(cmd1_name) {
+            Some(path) => Some(path),
+            None => {
+                println!("{}: command not found", cmd1_name);
+                return;
+            }
         }
+    } else {
+        None
     };
 
-    let cmd2_path = match find_executable(cmd2_name) {
-        Some(path) => path,
-        None => {
-            println!("{}: command not found", cmd2_name);
-            return;
+    let cmd2_path = if !cmd2_is_builtin {
+        match find_executable(cmd2_name) {
+            Some(path) => Some(path),
+            None => {
+                println!("{}: command not found", cmd2_name);
+                return;
+            }
         }
+    } else {
+        None
     };
 
     let mut pipe_fds: [libc::c_int; 2] = [0; 2];
@@ -292,14 +334,17 @@ fn execute_pipeline(commands: Vec<Vec<String>>) {
             libc::close(pipe_write_fd);
         }
 
-        let cmd1_file_name = Path::new(cmd1_name).file_name().unwrap().to_str().unwrap();
-
-        let _ = Command::new(&cmd1_path)
-            .arg0(cmd1_file_name)
-            .args(cmd1_rest)
-            .exec();
-
-        std::process::exit(1);
+        if cmd1_is_builtin {
+            execute_builtin_in_pipeline(cmd1_name, cmd1_rest);
+            std::process::exit(0);
+        } else {
+            let cmd1_file_name = Path::new(cmd1_name).file_name().unwrap().to_str().unwrap();
+            let _ = Command::new(cmd1_path.as_ref().unwrap())
+                .arg0(cmd1_file_name)
+                .args(cmd1_rest)
+                .exec();
+            std::process::exit(1);
+        }
     }
 
     let pid2 = unsafe { libc::fork() };
@@ -321,14 +366,17 @@ fn execute_pipeline(commands: Vec<Vec<String>>) {
             libc::close(pipe_read_fd);
         }
 
-        let cmd2_file_name = Path::new(cmd2_name).file_name().unwrap().to_str().unwrap();
-
-        let _ = Command::new(&cmd2_path)
-            .arg0(cmd2_file_name)
-            .args(cmd2_rest)
-            .exec();
-
-        std::process::exit(1);
+        if cmd2_is_builtin {
+            execute_builtin_in_pipeline(cmd2_name, cmd2_rest);
+            std::process::exit(0);
+        } else {
+            let cmd2_file_name = Path::new(cmd2_name).file_name().unwrap().to_str().unwrap();
+            let _ = Command::new(cmd2_path.as_ref().unwrap())
+                .arg0(cmd2_file_name)
+                .args(cmd2_rest)
+                .exec();
+            std::process::exit(1);
+        }
     }
 
     unsafe {
