@@ -257,135 +257,118 @@ fn execute_builtin_in_pipeline(cmd_name: &str, args: &[String]) {
 }
 
 fn execute_pipeline(commands: Vec<Vec<String>>) {
-    if commands.len() != 2 {
-        eprintln!("Only two-command pipelines are supported");
+    let n = commands.len();
+    if n < 2 {
         return;
     }
 
-    let cmd1_args = &commands[0];
-    let cmd2_args = &commands[1];
-
-    if cmd1_args.is_empty() || cmd2_args.is_empty() {
-        eprintln!("Empty command in pipeline");
-        return;
-    }
-
-    let cmd1_name = &cmd1_args[0];
-    let cmd1_rest = &cmd1_args[1..];
-    let cmd2_name = &cmd2_args[0];
-    let cmd2_rest = &cmd2_args[1..];
-
-    let cmd1_is_builtin = is_builtin(cmd1_name);
-    let cmd2_is_builtin = is_builtin(cmd2_name);
-
-    let cmd1_path = if !cmd1_is_builtin {
-        match find_executable(cmd1_name) {
-            Some(path) => Some(path),
-            None => {
-                println!("{}: command not found", cmd1_name);
-                return;
-            }
-        }
-    } else {
-        None
-    };
-
-    let cmd2_path = if !cmd2_is_builtin {
-        match find_executable(cmd2_name) {
-            Some(path) => Some(path),
-            None => {
-                println!("{}: command not found", cmd2_name);
-                return;
-            }
-        }
-    } else {
-        None
-    };
-
-    let mut pipe_fds: [libc::c_int; 2] = [0; 2];
-    unsafe {
-        if libc::pipe(pipe_fds.as_mut_ptr()) == -1 {
-            eprintln!("Failed to create pipe");
+    for cmd_args in &commands {
+        if cmd_args.is_empty() {
+            eprintln!("Empty command in pipeline");
             return;
         }
     }
 
-    let pipe_read_fd = pipe_fds[0];
-    let pipe_write_fd = pipe_fds[1];
+    let mut cmd_paths: Vec<Option<PathBuf>> = Vec::new();
+    for cmd_args in &commands {
+        let cmd_name = &cmd_args[0];
+        if is_builtin(cmd_name) {
+            cmd_paths.push(None);
+        } else {
+            match find_executable(cmd_name) {
+                Some(path) => cmd_paths.push(Some(path)),
+                None => {
+                    println!("{}: command not found", cmd_name);
+                    return;
+                }
+            }
+        }
+    }
+
+    let mut pipes: Vec<[libc::c_int; 2]> = Vec::new();
+    for _ in 0..(n - 1) {
+        let mut pipe_fds: [libc::c_int; 2] = [0; 2];
+        unsafe {
+            if libc::pipe(pipe_fds.as_mut_ptr()) == -1 {
+                eprintln!("Failed to create pipe");
+                for p in &pipes {
+                    libc::close(p[0]);
+                    libc::close(p[1]);
+                }
+                return;
+            }
+        }
+        pipes.push(pipe_fds);
+    }
 
     disable_raw_mode();
 
-    let pid1 = unsafe { libc::fork() };
+    let mut pids: Vec<libc::pid_t> = Vec::new();
 
-    if pid1 == -1 {
-        eprintln!("Failed to fork for first command");
-        unsafe {
-            libc::close(pipe_read_fd);
-            libc::close(pipe_write_fd);
-        }
-        enable_raw_mode();
-        return;
-    }
+    for i in 0..n {
+        let pid = unsafe { libc::fork() };
 
-    if pid1 == 0 {
-        unsafe {
-            libc::close(pipe_read_fd);
-            libc::dup2(pipe_write_fd, libc::STDOUT_FILENO);
-            libc::close(pipe_write_fd);
+        if pid == -1 {
+            eprintln!("Failed to fork for command {}", i);
+            unsafe {
+                for p in &pipes {
+                    libc::close(p[0]);
+                    libc::close(p[1]);
+                }
+            }
+            enable_raw_mode();
+            return;
         }
 
-        if cmd1_is_builtin {
-            execute_builtin_in_pipeline(cmd1_name, cmd1_rest);
-            std::process::exit(0);
-        } else {
-            let cmd1_file_name = Path::new(cmd1_name).file_name().unwrap().to_str().unwrap();
-            let _ = Command::new(cmd1_path.as_ref().unwrap())
-                .arg0(cmd1_file_name)
-                .args(cmd1_rest)
-                .exec();
-            std::process::exit(1);
-        }
-    }
+        if pid == 0 {
+            if i > 0 {
+                unsafe {
+                    libc::dup2(pipes[i - 1][0], libc::STDIN_FILENO);
+                }
+            }
 
-    let pid2 = unsafe { libc::fork() };
+            if i < n - 1 {
+                unsafe {
+                    libc::dup2(pipes[i][1], libc::STDOUT_FILENO);
+                }
+            }
 
-    if pid2 == -1 {
-        eprintln!("Failed to fork for second command");
-        unsafe {
-            libc::close(pipe_read_fd);
-            libc::close(pipe_write_fd);
-        }
-        enable_raw_mode();
-        return;
-    }
+            unsafe {
+                for p in &pipes {
+                    libc::close(p[0]);
+                    libc::close(p[1]);
+                }
+            }
 
-    if pid2 == 0 {
-        unsafe {
-            libc::close(pipe_write_fd);
-            libc::dup2(pipe_read_fd, libc::STDIN_FILENO);
-            libc::close(pipe_read_fd);
+            let cmd_name = &commands[i][0];
+            let cmd_rest = &commands[i][1..];
+
+            if is_builtin(cmd_name) {
+                execute_builtin_in_pipeline(cmd_name, cmd_rest);
+                std::process::exit(0);
+            } else {
+                let cmd_file_name = Path::new(cmd_name).file_name().unwrap().to_str().unwrap();
+                let _ = Command::new(cmd_paths[i].as_ref().unwrap())
+                    .arg0(cmd_file_name)
+                    .args(cmd_rest)
+                    .exec();
+                std::process::exit(1);
+            }
         }
 
-        if cmd2_is_builtin {
-            execute_builtin_in_pipeline(cmd2_name, cmd2_rest);
-            std::process::exit(0);
-        } else {
-            let cmd2_file_name = Path::new(cmd2_name).file_name().unwrap().to_str().unwrap();
-            let _ = Command::new(cmd2_path.as_ref().unwrap())
-                .arg0(cmd2_file_name)
-                .args(cmd2_rest)
-                .exec();
-            std::process::exit(1);
-        }
+        pids.push(pid);
     }
 
     unsafe {
-        libc::close(pipe_read_fd);
-        libc::close(pipe_write_fd);
+        for p in &pipes {
+            libc::close(p[0]);
+            libc::close(p[1]);
+        }
 
         let mut status: libc::c_int = 0;
-        libc::waitpid(pid1, &mut status, 0);
-        libc::waitpid(pid2, &mut status, 0);
+        for pid in &pids {
+            libc::waitpid(*pid, &mut status, 0);
+        }
     }
 
     enable_raw_mode();
