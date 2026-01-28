@@ -3,7 +3,7 @@ mod executor;
 mod parser;
 mod terminal;
 
-use crate::executor::{execute_command_line, find_completions};
+use crate::executor::{execute_command_line, find_completions, get_longest_common_prefix};
 use crate::terminal::enable_raw_mode;
 use std::io::{self, Read, Write};
 
@@ -41,21 +41,28 @@ fn main() {
                     }
                     tab_press_count = 0;
                 } else if matches.len() > 1 {
-                    tab_press_count += 1;
+                    let lcp = get_longest_common_prefix(&matches);
 
-                    if tab_press_count == 1 {
-                        print!("\x07");
+                    if lcp.len() > buffer.len() {
+                        let remainder = &lcp[buffer.len()..];
+                        print!("{}", remainder);
                         io::stdout().flush().unwrap();
+                        buffer.push_str(remainder);
+                        tab_press_count = 0;
                     } else {
-                        print!("\r\n");
+                        tab_press_count += 1;
 
-                        let list = matches.join("  ");
-                        print!("{}", list);
-
-                        print!("\r\n");
-
-                        print!("$ {}", buffer);
-                        io::stdout().flush().unwrap();
+                        if tab_press_count == 1 {
+                            print!("\x07");
+                            io::stdout().flush().unwrap();
+                        } else {
+                            print!("\r\n");
+                            let list = matches.join("  ");
+                            print!("{}", list);
+                            print!("\r\n");
+                            print!("$ {}", buffer);
+                            io::stdout().flush().unwrap();
+                        }
                     }
                 } else {
                     print!("\x07");
