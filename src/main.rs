@@ -17,6 +17,8 @@ fn main() {
     let stdin = io::stdin();
     let mut handle = stdin.lock();
 
+    let mut tab_press_count = 0;
+
     loop {
         let mut byte_buffer = [0u8; 1];
         if handle.read_exact(&mut byte_buffer).is_err() {
@@ -37,16 +39,33 @@ fn main() {
                         buffer.push_str(remainder);
                         buffer.push(' ');
                     }
+                    tab_press_count = 0;
                 } else if matches.len() > 1 {
-                    print!("\x07");
-                    io::stdout().flush().unwrap();
+                    tab_press_count += 1;
+
+                    if tab_press_count == 1 {
+                        print!("\x07");
+                        io::stdout().flush().unwrap();
+                    } else {
+                        print!("\r\n");
+
+                        let list = matches.join("  ");
+                        print!("{}", list);
+
+                        print!("\r\n");
+
+                        print!("$ {}", buffer);
+                        io::stdout().flush().unwrap();
+                    }
                 } else {
                     print!("\x07");
                     io::stdout().flush().unwrap();
+                    tab_press_count = 0;
                 }
             }
 
             10 => {
+                tab_press_count = 0;
                 println!();
                 if execute_command_line(&buffer) {
                     break;
@@ -55,14 +74,18 @@ fn main() {
                 print!("$ ");
                 io::stdout().flush().unwrap();
             }
+
             127 => {
+                tab_press_count = 0;
                 if !buffer.is_empty() {
                     buffer.pop();
                     print!("\x08 \x08");
                     io::stdout().flush().unwrap();
                 }
             }
+
             c => {
+                tab_press_count = 0;
                 let char = c as char;
                 print!("{}", char);
                 io::stdout().flush().unwrap();
