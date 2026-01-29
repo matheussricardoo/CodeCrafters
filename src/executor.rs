@@ -189,7 +189,12 @@ pub fn execute_command_line(input: &str, history: &[String]) -> bool {
             }
         }
         "history" => {
-            for (i, cmd) in history.iter().enumerate() {
+            let n: usize = args
+                .get(0)
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(history.len());
+            let start = history.len().saturating_sub(n);
+            for (i, cmd) in history.iter().enumerate().skip(start) {
                 println!("{:5}  {}", i + 1, cmd);
             }
         }
