@@ -1,16 +1,16 @@
-use std::collections::HashSet;
-use std::env;
-use std::fs::{self, File, OpenOptions};
+#[allow(unused_imports)]
 use std::io::{self, Write};
-use std::os::unix::fs::PermissionsExt;
-use std::os::unix::io::{AsRawFd, FromRawFd};
-use std::os::unix::process::CommandExt;
-use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 
 use crate::builtins::BUILTINS;
 use crate::parser::{parse_input, split_by_pipe};
 use crate::terminal::{disable_raw_mode, enable_raw_mode};
+use std::collections::HashSet;
+use std::env;
+use std::fs::{self, File, OpenOptions};
+use std::os::unix::fs::PermissionsExt;
+use std::os::unix::process::CommandExt;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 
 fn find_executable(command_name: &str) -> Option<PathBuf> {
     let path_var = env::var("PATH").unwrap_or_default();

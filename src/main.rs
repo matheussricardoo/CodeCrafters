@@ -19,6 +19,7 @@ fn main() {
 
     let mut tab_press_count = 0;
     let mut history: Vec<String> = Vec::new();
+    let mut history_index: usize = 0;
 
     loop {
         let mut byte_buffer = [0u8; 1];
@@ -79,12 +80,54 @@ fn main() {
                 if !trimmed.is_empty() {
                     history.push(trimmed.to_string());
                 }
+                history_index = history.len();
                 if execute_command_line(&buffer, &history) {
                     break;
                 }
                 buffer.clear();
                 print!("$ ");
                 io::stdout().flush().unwrap();
+            }
+
+            27 => {
+                let mut seq = [0u8; 2];
+                if handle.read_exact(&mut seq).is_ok() {
+                    if seq[0] == 91 {
+                        match seq[1] {
+                            65 => {
+                                if !history.is_empty() && history_index > 0 {
+                                    history_index -= 1;
+                                    print!("\r$ ");
+                                    for _ in 0..buffer.len() {
+                                        print!(" ");
+                                    }
+                                    print!("\r$ ");
+                                    buffer = history[history_index].clone();
+                                    print!("{}", buffer);
+                                    io::stdout().flush().unwrap();
+                                }
+                            }
+                            66 => {
+                                if !history.is_empty() && history_index < history.len() {
+                                    history_index += 1;
+                                    print!("\r$ ");
+                                    for _ in 0..buffer.len() {
+                                        print!(" ");
+                                    }
+                                    print!("\r$ ");
+                                    if history_index < history.len() {
+                                        buffer = history[history_index].clone();
+                                    } else {
+                                        buffer.clear();
+                                    }
+                                    print!("{}", buffer);
+                                    io::stdout().flush().unwrap();
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
             }
 
             127 => {
