@@ -28,7 +28,7 @@ fn find_executable(command_name: &str) -> Option<PathBuf> {
     None
 }
 
-pub fn execute_command_line(input: &str) -> bool {
+pub fn execute_command_line(input: &str, history: &[String]) -> bool {
     let clean_input = input.trim();
     if clean_input.is_empty() {
         return false;
@@ -186,6 +186,11 @@ pub fn execute_command_line(input: &str) -> bool {
             let path = Path::new(&new_dir);
             if let Err(_) = env::set_current_dir(path) {
                 println!("cd: {}: No such file or directory", new_dir);
+            }
+        }
+        "history" => {
+            for (i, cmd) in history.iter().enumerate() {
+                println!("{:5}  {}", i + 1, cmd);
             }
         }
         _ => match find_executable(command) {

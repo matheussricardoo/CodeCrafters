@@ -18,6 +18,7 @@ fn main() {
     let mut handle = stdin.lock();
 
     let mut tab_press_count = 0;
+    let mut history: Vec<String> = Vec::new();
 
     loop {
         let mut byte_buffer = [0u8; 1];
@@ -74,7 +75,11 @@ fn main() {
             10 => {
                 tab_press_count = 0;
                 println!();
-                if execute_command_line(&buffer) {
+                let trimmed = buffer.trim();
+                if !trimmed.is_empty() {
+                    history.push(trimmed.to_string());
+                }
+                if execute_command_line(&buffer, &history) {
                     break;
                 }
                 buffer.clear();
