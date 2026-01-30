@@ -167,4 +167,12 @@ fn main() {
             }
         }
     }
+
+    if let Ok(histfile_path) = env::var("HISTFILE") {
+        if let Ok(mut file) = File::create(&histfile_path) {
+            for cmd in history.iter() {
+                let _ = writeln!(file, "{}", cmd);
+            }
+        }
+    }
 }
