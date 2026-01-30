@@ -1,5 +1,5 @@
 #[allow(unused_imports)]
-use std::io::{self, Write};
+use std::io::{self, BufRead, BufReader, Write};
 
 use crate::builtins::BUILTINS;
 use crate::parser::{parse_input, split_by_pipe};
@@ -28,7 +28,7 @@ fn find_executable(command_name: &str) -> Option<PathBuf> {
     None
 }
 
-pub fn execute_command_line(input: &str, history: &[String]) -> bool {
+pub fn execute_command_line(input: &str, history: &mut Vec<String>) -> bool {
     let clean_input = input.trim();
     if clean_input.is_empty() {
         return false;
@@ -189,13 +189,42 @@ pub fn execute_command_line(input: &str, history: &[String]) -> bool {
             }
         }
         "history" => {
-            let n: usize = args
-                .get(0)
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(history.len());
-            let start = history.len().saturating_sub(n);
-            for (i, cmd) in history.iter().enumerate().skip(start) {
-                println!("{:5}  {}", i + 1, cmd);
+            if args.get(0).map(|s| s.as_str()) == Some("-r") {
+                if let Some(filepath) = args.get(1) {
+                    match File::open(filepath) {
+                        Ok(file) => {
+                            let reader = BufReader::new(file);
+                            for line in reader.lines() {
+                                match line {
+                                    Ok(cmd) => {
+                                        let trimmed = cmd.trim();
+                                        if !trimmed.is_empty() {
+                                            history.push(trimmed.to_string());
+                                        }
+                                    }
+                                    Err(e) => {
+                                        eprintln!("Error reading history file: {}", e);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("history: {}: {}", filepath, e);
+                        }
+                    }
+                } else {
+                    eprintln!("history: -r requires a filename argument");
+                }
+            } else {
+                let n: usize = args
+                    .get(0)
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(history.len());
+                let start = history.len().saturating_sub(n);
+                for (i, cmd) in history.iter().enumerate().skip(start) {
+                    println!("{:5}  {}", i + 1, cmd);
+                }
             }
         }
         _ => match find_executable(command) {

@@ -81,7 +81,7 @@ fn main() {
                     history.push(trimmed.to_string());
                 }
                 history_index = history.len();
-                if execute_command_line(&buffer, &history) {
+                if execute_command_line(&buffer, &mut history) {
                     break;
                 }
                 buffer.clear();
