@@ -216,6 +216,24 @@ pub fn execute_command_line(input: &str, history: &mut Vec<String>) -> bool {
                 } else {
                     eprintln!("history: -r requires a filename argument");
                 }
+            } else if args.get(0).map(|s| s.as_str()) == Some("-w") {
+                if let Some(filepath) = args.get(1) {
+                    match File::create(filepath) {
+                        Ok(mut file) => {
+                            for cmd in history.iter() {
+                                if let Err(e) = writeln!(file, "{}", cmd) {
+                                    eprintln!("Error writing to history file: {}", e);
+                                    break;
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("history: {}: {}", filepath, e);
+                        }
+                    }
+                } else {
+                    eprintln!("history: -w requires a filename argument");
+                }
             } else {
                 let n: usize = args
                     .get(0)
