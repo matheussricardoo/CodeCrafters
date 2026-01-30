@@ -5,7 +5,9 @@ mod terminal;
 
 use crate::executor::{execute_command_line, find_completions, get_longest_common_prefix};
 use crate::terminal::enable_raw_mode;
-use std::io::{self, Read, Write};
+use std::env;
+use std::fs::File;
+use std::io::{self, BufRead, BufReader, Read, Write};
 
 fn main() {
     enable_raw_mode();
@@ -21,6 +23,22 @@ fn main() {
     let mut history: Vec<String> = Vec::new();
     let mut history_index: usize = 0;
     let mut last_saved_index: usize = 0;
+
+    if let Ok(histfile_path) = env::var("HISTFILE") {
+        if let Ok(file) = File::open(&histfile_path) {
+            let reader = BufReader::new(file);
+            for line in reader.lines() {
+                if let Ok(cmd) = line {
+                    let trimmed = cmd.trim();
+                    if !trimmed.is_empty() {
+                        history.push(trimmed.to_string());
+                    }
+                }
+            }
+            history_index = history.len();
+            last_saved_index = history.len();
+        }
+    }
 
     loop {
         let mut byte_buffer = [0u8; 1];
