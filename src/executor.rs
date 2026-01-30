@@ -28,7 +28,11 @@ fn find_executable(command_name: &str) -> Option<PathBuf> {
     None
 }
 
-pub fn execute_command_line(input: &str, history: &mut Vec<String>) -> bool {
+pub fn execute_command_line(
+    input: &str,
+    history: &mut Vec<String>,
+    last_saved_index: &mut usize,
+) -> bool {
     let clean_input = input.trim();
     if clean_input.is_empty() {
         return false;
@@ -233,6 +237,30 @@ pub fn execute_command_line(input: &str, history: &mut Vec<String>) -> bool {
                     }
                 } else {
                     eprintln!("history: -w requires a filename argument");
+                }
+            } else if args.get(0).map(|s| s.as_str()) == Some("-a") {
+                if let Some(filepath) = args.get(1) {
+                    match OpenOptions::new()
+                        .create(true)
+                        .write(true)
+                        .append(true)
+                        .open(filepath)
+                    {
+                        Ok(mut file) => {
+                            for cmd in history.iter().skip(*last_saved_index) {
+                                if let Err(e) = writeln!(file, "{}", cmd) {
+                                    eprintln!("Error writing to history file: {}", e);
+                                    break;
+                                }
+                            }
+                            *last_saved_index = history.len();
+                        }
+                        Err(e) => {
+                            eprintln!("history: {}: {}", filepath, e);
+                        }
+                    }
+                } else {
+                    eprintln!("history: -a requires a filename argument");
                 }
             } else {
                 let n: usize = args

@@ -20,6 +20,7 @@ fn main() {
     let mut tab_press_count = 0;
     let mut history: Vec<String> = Vec::new();
     let mut history_index: usize = 0;
+    let mut last_saved_index: usize = 0;
 
     loop {
         let mut byte_buffer = [0u8; 1];
@@ -81,7 +82,7 @@ fn main() {
                     history.push(trimmed.to_string());
                 }
                 history_index = history.len();
-                if execute_command_line(&buffer, &mut history) {
+                if execute_command_line(&buffer, &mut history, &mut last_saved_index) {
                     break;
                 }
                 buffer.clear();
