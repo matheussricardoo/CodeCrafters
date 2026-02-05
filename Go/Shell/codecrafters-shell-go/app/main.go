@@ -1,21 +1,31 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
+	"os"
+	"strings"
 )
-
-// Ensures gofmt doesn't remove the "fmt" import in stage 1 (feel free to remove this!)
-var _ = fmt.Print
 
 func main() {
 	for {
 		fmt.Print("$ ")
-		var input string
-		fmt.Scan(&input)
-		if input == "exit" {
-			break
-		} else if input != "" {
-			fmt.Printf("%s: command not found\n", input)
+		scanner := bufio.NewScanner(os.Stdin)
+		scanner.Scan()
+		input := scanner.Text()
+		list := strings.Fields(input)
+		if len(list) == 0 {
+			continue
+		}
+		switch list[0] {
+		case "exit":
+			os.Exit(0)
+		case "echo":
+			args := list[1:]
+			total_args := strings.Join(args, " ")
+			fmt.Println(total_args)
+		default:
+			fmt.Printf("%s: command not found\n", list[0])
 		}
 	}
 }
