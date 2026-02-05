@@ -12,7 +12,9 @@ func main() {
 		fmt.Print("$ ")
 		var input string
 		fmt.Scan(&input)
-		if input != "" {
+		if input == "exit" {
+			break
+		} else if input != "" {
 			fmt.Printf("%s: command not found\n", input)
 		}
 	}
