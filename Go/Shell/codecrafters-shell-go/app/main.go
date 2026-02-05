@@ -24,6 +24,12 @@ func main() {
 			args := list[1:]
 			total_args := strings.Join(args, " ")
 			fmt.Println(total_args)
+		case "type":
+			if list[1] == "exit" || list[1] == "echo" || list[1] == "type" {
+				fmt.Printf("%s is a shell builtin\n", list[1])
+			} else {
+				fmt.Printf("%s: not found\n", list[1])
+			}
 		default:
 			fmt.Printf("%s: command not found\n", list[0])
 		}
