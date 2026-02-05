@@ -8,5 +8,12 @@ import (
 var _ = fmt.Print
 
 func main() {
-	fmt.Print("$ ")
+	for {
+		fmt.Print("$ ")
+		var input string
+		fmt.Scan(&input)
+		if input != "" {
+			fmt.Printf("%s: command not found\n", input)
+		}
+	}
 }
